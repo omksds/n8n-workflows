@@ -1,0 +1,247 @@
+{
+  "name": "S3 Image 2:3 Aspect Ratio Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "s3-2-3-aspect-check",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bucket-name",
+              "name": "bucket_name",
+              "value": "={{ $json.bucket_name || 'your-default-bucket' }}",
+              "type": "string"
+            },
+            {
+              "id": "file-key",
+              "name": "file_key",
+              "value": "={{ $json.file_key || $json.image_key || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "request-timestamp",
+              "name": "request_timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-s3-params",
+      "name": "Prepare S3 Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "bucketName": "={{ $json.bucket_name }}",
+        "fileKey": "={{ $json.file_key }}",
+        "binaryPropertyName": "image_data"
+      },
+      "id": "s3-download",
+      "name": "S3 Download Image",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// S3から取得した画像のアスペクト比を計算（2:3分岐用）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  let imageData = null;\n  let aspectRatio = null;\n  \n  try {\n    const bucketName = item.json?.bucket_name || 'unknown';\n    const fileKey = item.json?.file_key || 'unknown';\n    \n    if (item.binary && item.binary.image_data) {\n      const binaryData = item.binary.image_data;\n      let width = null;\n      let height = null;\n      \n      // 寸法の取得（既存のロジック）\n      if (item.json?.width && item.json?.height) {\n        width = parseInt(item.json.width);\n        height = parseInt(item.json.height);\n      } else if (item.json?.image_width && item.json?.image_height) {\n        width = parseInt(item.json.image_width);\n        height = parseInt(item.json.image_height);\n      } else {\n        const fileName = fileKey || '';\n        if (fileName && typeof fileName === 'string' && fileName.length > 0) {\n          const dimensionMatch = fileName.match(/(\\d+)x(\\d+)/);\n          if (dimensionMatch) {\n            width = parseInt(dimensionMatch[1]);\n            height = parseInt(dimensionMatch[2]);\n          }\n        }\n      }\n      \n      if (width && height && width > 0 && height > 0) {\n        aspectRatio = width / height;\n        \n        // 2:3（0.67）を基準とした分類\n        let classification = '';\n        if (aspectRatio < 0.67) {\n          classification = 'tall'; // 縦長（2:3より縦長）\n        } else {\n          classification = 'not_tall'; // 縦長でない（2:3以上の比率）\n        }\n        \n        imageData = {\n          width: width,\n          height: height,\n          aspectRatio: aspectRatio,\n          classification: classification,\n          ratio_text: `${width}:${height}`,\n          decimal_ratio: Math.round(aspectRatio * 100) / 100,\n          is_tall: aspectRatio < 0.67,\n          ratio_2_3_comparison: {\n            threshold: 0.67,\n            is_taller_than_2_3: aspectRatio < 0.67,\n            difference_from_2_3: Math.round((aspectRatio - 0.67) * 100) / 100\n          },\n          file_size: binaryData?.fileSize || 0,\n          mime_type: binaryData?.mimeType || 'unknown',\n          s3_source: {\n            bucket: bucketName,\n            key: fileKey\n          }\n        };\n      } else {\n        imageData = {\n          error: 'Could not determine image dimensions',\n          classification: 'unknown',\n          s3_source: {\n            bucket: bucketName,\n            key: fileKey\n          }\n        };\n      }\n    } else {\n      imageData = {\n        error: 'Failed to download image from S3',\n        classification: 'error',\n        s3_source: {\n          bucket: bucketName,\n          key: fileKey\n        }\n      };\n    }\n    \n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: imageData\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: {\n          error: `Analysis Error: ${error.message}`,\n          classification: 'error',\n          s3_source: {\n            bucket: item.json?.bucket_name || 'unknown',\n            key: item.json?.file_key || 'unknown'\n          }\n        }\n      },\n      binary: item.binary\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "s3-image-analyzer",
+      "name": "S3 Image Analyzer (2:3)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "tall-condition",
+                    "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+                    "rightValue": 0.67,
+                    "operator": {
+                      "type": "number",
+                      "operation": "smaller"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "tall_images"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "not-tall-condition",
+                    "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+                    "rightValue": 0.67,
+                    "operator": {
+                      "type": "number",
+                      "operation": "largerEqual"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "not_tall_images"
+            }
+          ]
+        },
+        "looseTypeValidation": false
+      },
+      "id": "aspect-ratio-2-3-switch",
+      "name": "Aspect Ratio 2:3 Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 縦長画像の処理（アスペクト比 < 0.67）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const analysis = item.json?.image_analysis || {};\n  \n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'tall_image',\n        message: `縦長画像を検出しました（2:3より縦長）。アスペクト比: ${analysis.decimal_ratio}`,\n        recommended_action: 'ポートレート写真、モバイル向け画像、縦型バナーとして使用することをお勧めします',\n        dimensions: `${analysis.width}x${analysis.height}`,\n        aspect_ratio_info: {\n          value: analysis.decimal_ratio,\n          threshold: '0.67 (2:3)',\n          comparison: 'より縦長',\n          difference: analysis.ratio_2_3_comparison?.difference_from_2_3 || 'unknown'\n        },\n        file_info: {\n          size: analysis.file_size || 0,\n          mime_type: analysis.mime_type || 'unknown',\n          s3_location: analysis.s3_source ? `s3://${analysis.s3_source.bucket}/${analysis.s3_source.key}` : 'unknown'\n        },\n        processed_at: new Date().toISOString(),\n        processing_type: 's3_2_3_classification'\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "tall-image-processor",
+      "name": "Tall Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 縦長でない画像の処理（アスペクト比 >= 0.67）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const analysis = item.json?.image_analysis || {};\n  \n  // アスペクト比による詳細分類\n  let detailClassification = '';\n  let specificRecommendation = '';\n  \n  const ratio = analysis.decimal_ratio || 0;\n  if (ratio >= 0.67 && ratio < 0.8) {\n    detailClassification = '2:3から3:4の範囲';\n    specificRecommendation = 'ポートレート写真や縦型コンテンツに適しています';\n  } else if (ratio >= 0.8 && ratio < 1.2) {\n    detailClassification = '正方形に近い';\n    specificRecommendation = 'プロフィール画像、アイコン、正方形コンテンツに適しています';\n  } else if (ratio >= 1.2) {\n    detailClassification = '横長';\n    specificRecommendation = 'バナー画像、ヘッダー画像、横型コンテンツに適しています';\n  } else {\n    detailClassification = '2:3比率';\n    specificRecommendation = '標準的な縦型コンテンツに適しています';\n  }\n  \n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'not_tall_image',\n        message: `縦長でない画像を検出しました（2:3以上）。アスペクト比: ${analysis.decimal_ratio}`,\n        recommended_action: specificRecommendation,\n        dimensions: `${analysis.width}x${analysis.height}`,\n        aspect_ratio_info: {\n          value: analysis.decimal_ratio,\n          threshold: '0.67 (2:3)',\n          comparison: '以上',\n          difference: analysis.ratio_2_3_comparison?.difference_from_2_3 || 'unknown',\n          detail_classification: detailClassification\n        },\n        file_info: {\n          size: analysis.file_size || 0,\n          mime_type: analysis.mime_type || 'unknown',\n          s3_location: analysis.s3_source ? `s3://${analysis.s3_source.bucket}/${analysis.s3_source.key}` : 'unknown'\n        },\n        processed_at: new Date().toISOString(),\n        processing_type: 's3_2_3_classification'\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "not-tall-image-processor",
+      "name": "Not Tall Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 360]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare S3 Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare S3 Parameters": {
+      "main": [
+        [
+          {
+            "node": "S3 Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Download Image": {
+      "main": [
+        [
+          {
+            "node": "S3 Image Analyzer (2:3)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Image Analyzer (2:3)": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio 2:3 Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio 2:3 Switch": {
+      "main": [
+        [
+          {
+            "node": "Tall Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not Tall Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "n8n-instance"
+  },
+  "id": "s3-2-3-aspect-workflow",
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "s3-2-3-aspect",
+      "name": "s3-2-3-aspect"
+    }
+  ]
+}

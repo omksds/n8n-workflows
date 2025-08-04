@@ -1,0 +1,170 @@
+---
+alwaysApply: true
+---
+
+# n8n ワークフロー トラブルシューティングガイド
+
+このチャットで発生した問題と解決策を記録し、同様の問題を防ぐためのガイド。
+
+## 🚨 発生した主要な問題
+
+### 1. Switch ノードでの型エラー
+
+**症状**: `TypeError: Cannot read properties of undefined (reading 'singleValue')`
+**原因**: Switch ノードの設定不備
+**解決**: `"singleValue": true` を追加、ブール値比較に変更
+
+### 2. Python Code ノードでのファイルサイズエラー
+
+**症状**: `'>' not supported between instances of 'str' and 'int'`
+**原因**: n8n S3 ノードが `'1.06 MB'` 形式の文字列を返す
+**解決**: `parse_file_size()` 関数で数値変換
+
+### 3. バイナリデータアクセスエラー
+
+**症状**: `Property 'image_data' does not exist on type 'Record<{}, N8nBinary>'`
+**原因**: Code ノードのモード設定とデータアクセス方法の不整合
+**解決**: `runOnceForEachItem` モードで `$binary.image_data` を使用
+
+### 4. Switch ノードでの数値比較問題
+
+**症状**: Python の `float` が Switch ノードで認識されない
+**原因**: 型の不整合
+**解決**: 数値比較ではなくブール値比較を使用
+
+## 🛠️ 問題解決のパターン
+
+### パターン 1: 型エラーの解決
+
+```python
+# ❌ 問題のあるコード
+file_size = binary_data.get('fileSize', 0)  # '1.06 MB' が返される
+if file_size > 1000000:  # TypeError
+
+# ✅ 解決コード
+raw_file_size = binary_data.get('fileSize', 0)
+file_size_bytes = parse_file_size(raw_file_size)  # 数値に変換
+if file_size_bytes > 1000000:  # OK
+```
+
+### パターン 2: Switch ノード設定の修正
+
+```json
+// ❌ 問題のある設定
+{
+  "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+  "rightValue": 0.67,
+  "operator": {"type": "number", "operation": "smaller"}
+}
+
+// ✅ 解決設定
+{
+  "leftValue": "={{ $json.image_analysis.is_tall }}",
+  "rightValue": "",
+  "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+}
+```
+
+### パターン 3: Code ノードでのデータ準備
+
+```python
+# Switch ノード用にブール値を事前計算
+image_data = {
+    'aspectRatio': float(aspect_ratio),
+    'is_tall': bool(aspect_ratio < 0.67),  # Switch用
+    'classification': str(classification)
+}
+```
+
+## 🔍 デバッグ手順
+
+### 1. エラーログの確認
+
+- ブラウザのコンソールログを確認
+- n8n の実行ログを確認
+- Python Code ノードの `print()` 出力を確認
+
+### 2. データフローの追跡
+
+```python
+# 各段階でのデータ確認
+print(f"[DEBUG] Input: {_json}")
+print(f"[DEBUG] Binary keys: {list(_binary.keys()) if _binary else []}")
+print(f"[DEBUG] Calculated: aspectRatio={aspect_ratio}, is_tall={is_tall}")
+print(f"[DEBUG] Output: {image_data}")
+```
+
+### 3. 型の確認
+
+```python
+# 型情報の出力
+print(f"[TYPE_DEBUG] aspectRatio: {type(aspect_ratio)}")
+print(f"[TYPE_DEBUG] is_tall: {type(is_tall)}")
+print(f"[TYPE_DEBUG] classification: {type(classification)}")
+```
+
+## 📋 チェックリスト
+
+### Code ノード作成時
+
+- [ ] `mode: "runOnceForEachItem"` を設定
+- [ ] 明示的な型変換を実装
+- [ ] エラーハンドリングを追加
+- [ ] デバッグログを追加
+- [ ] デフォルト値を設定
+
+### Switch ノード作成時
+
+- [ ] `looseTypeValidation: true` を設定
+- [ ] `typeValidation: "loose"` を設定
+- [ ] ブール値比較を使用
+- [ ] `singleValue: true` を設定（ブール値時）
+- [ ] 適切な `outputKey` を設定
+
+### S3 統合時
+
+- [ ] `binaryPropertyName: "image_data"` を設定
+- [ ] ファイルサイズパース関数を実装
+- [ ] バイナリデータの存在確認を追加
+- [ ] AWS 認証情報を設定
+
+### 全体的な確認
+
+- [ ] ワークフローの接続を確認
+- [ ] エラー時のフォールバック処理
+- [ ] テストケースの作成
+- [ ] ドキュメントの更新
+
+## 🎯 予防策
+
+### 1. 型安全性の確保
+
+- 全ての値を明示的に型変換
+- Switch ノードではブール値比較を優先
+- デフォルト値を必ず設定
+
+### 2. 設定の標準化
+
+- Switch ノードは常に `looseTypeValidation: true`
+- Code ノードは `runOnceForEachItem` モード
+- 一貫したネーミング規則
+
+### 3. テストの実施
+
+- 各段階でのデータ確認
+- エラーケースのテスト
+- 型変換の動作確認
+
+### 4. ドキュメント化
+
+- 設定の理由を記録
+- トラブルシューティング手順を文書化
+- ベストプラクティスの共有
+
+## 📚 参考ファイル
+
+このプロジェクトで作成された参考ファイル：
+
+- [My workflow 3.json](mdc:dev/image_aspect_ratio_workflow/My workflow 3.json) - 正解となったワークフロー
+- [PYTHON-FILESIZE-FIX.md](mdc:dev/image_aspect_ratio_workflow/PYTHON-FILESIZE-FIX.md) - ファイルサイズエラーの修正
+- [SWITCH-COMPATIBILITY-FIX.md](mdc:dev/image_aspect_ratio_workflow/SWITCH-COMPATIBILITY-FIX.md) - Switch 整合性問題の修正

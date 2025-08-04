@@ -1,0 +1,200 @@
+---
+globs: *.json,*.py
+description: n8n Python Code ノードでの型安全性とエラーハンドリング
+---
+
+# n8n Python Code ノード開発パターン
+
+## 🐍 Python Code ノード設定
+
+### 必須設定
+
+```json
+{
+  "parameters": {
+    "mode": "runOnceForEachItem", // 各アイテムに対して実行
+    "language": "python"
+  }
+}
+```
+
+### データアクセスパターン
+
+```python
+# 正しいデータアクセス（runOnceForEachItem モード）
+bucket_name = _json.get('bucket_name', 'unknown')
+file_key = _json.get('file_key', 'unknown')
+
+# バイナリデータアクセス
+if _binary and 'image_data' in _binary:
+    binary_data = _binary['image_data']
+```
+
+## 🔢 型変換と安全性
+
+### 必須の型変換パターン
+
+```python
+# n8n Switch ノードとの整合性のため明示的に型変換
+image_data = {
+    'width': int(width),                    # 整数
+    'height': int(height),                  # 整数
+    'aspectRatio': float(aspect_ratio),     # 浮動小数点
+    'is_tall': bool(aspect_ratio < 0.67),   # ブール値（Switch用）
+    'classification': str(classification),  # 文字列
+    'decimal_ratio': round(aspect_ratio, 3) # 丸め処理
+}
+```
+
+### デフォルト値の設定
+
+```python
+# 必ず有効な値を保証（Switch ノード整合性のため）
+if not width or not height or width <= 0 or height <= 0:
+    width, height = 1024, 768  # フォールバック値
+    detection_method = 'fallback'
+
+# アスペクト比計算（必ず数値を保証）
+aspect_ratio = float(width / height)
+```
+
+## 📁 ファイルサイズ処理
+
+### n8n S3 ノード対応
+
+```python
+def parse_file_size(size_str):
+    """
+    n8n S3 ノードが返す '1.06 MB' 形式を数値（バイト）に変換
+
+    Args:
+        size_str: ファイルサイズ（'1.06 MB', 1048576, など）
+
+    Returns:
+        int: ファイルサイズ（バイト）
+    """
+    if isinstance(size_str, (int, float)):
+        return int(size_str)
+
+    if not isinstance(size_str, str):
+        return 0
+
+    # '1.06 MB' のような文字列を数値に変換
+    size_match = re.search(r'([\d.]+)\s*(MB|KB|B)', size_str, re.IGNORECASE)
+    if size_match:
+        size_value = float(size_match.group(1))
+        size_unit = size_match.group(2).upper()
+        if size_unit == 'MB':
+            return int(size_value * 1024 * 1024)
+        elif size_unit == 'KB':
+            return int(size_value * 1024)
+        else:  # B
+            return int(size_value)
+
+    # 数値のみの場合
+    try:
+        return int(float(size_str))
+    except (ValueError, TypeError):
+        return 0
+
+# 使用例
+raw_file_size = binary_data.get('fileSize', 0)
+file_size_bytes = parse_file_size(raw_file_size)
+```
+
+## 🚨 エラーハンドリング
+
+### 堅牢なエラー処理
+
+```python
+try:
+    # メイン処理
+    aspect_ratio = width / height
+    classification = 'tall' if aspect_ratio < 0.67 else 'not_tall'
+
+    image_data = {
+        'aspectRatio': float(aspect_ratio),
+        'is_tall': bool(aspect_ratio < 0.67),
+        'classification': str(classification)
+    }
+
+except Exception as error:
+    print(f"[ERROR] Analysis Error: {str(error)}")
+    import traceback
+    traceback.print_exc()
+
+    # エラー時でも Switch ノード通過可能な形式
+    image_data = {
+        'aspectRatio': 1.33,        # デフォルト値
+        'is_tall': False,           # デフォルトブール値
+        'classification': 'error',
+        'error': f'Analysis Error: {str(error)}',
+        'error_type': type(error).__name__
+    }
+```
+
+## 🔍 デバッグパターン
+
+### 詳細なデバッグログ
+
+```python
+# 処理開始時
+print(f"[DEBUG] Processing: bucket={bucket_name}, file_key={file_key}")
+print(f"[DEBUG] Input JSON keys: {list(_json.keys())}")
+print(f"[DEBUG] Binary available: {bool(_binary)}")
+
+# 計算結果
+print(f"[DEBUG] Final results:")
+print(f"[DEBUG] - Width: {width} (type: {type(width)})")
+print(f"[DEBUG] - Height: {height} (type: {type(height)})")
+print(f"[DEBUG] - Aspect Ratio: {aspect_ratio} (type: {type(aspect_ratio)})")
+print(f"[DEBUG] - is_tall: {is_tall} (type: {type(is_tall)})")
+print(f"[DEBUG] - Classification: {classification}")
+
+# Switch ノード用データ確認
+print(f"[DEBUG] Switch用データ: aspectRatio={image_data['aspectRatio']}, is_tall={image_data['is_tall']}")
+```
+
+## 📤 戻り値の形式
+
+### 標準的な戻り値パターン
+
+```python
+# runOnceForEachItem モードでの戻り値
+result = {
+    'json': {
+        **_json,  # 元の入力データを保持
+        'image_analysis': image_data  # 分析結果を追加
+    },
+    'binary': _binary  # バイナリデータを保持
+}
+
+return result
+```
+
+## 🎯 Switch ノード連携
+
+### Switch ノード用データ準備
+
+```python
+# Switch ノードで使いやすい形式
+image_data = {
+    # 数値計算結果
+    'aspectRatio': float(aspect_ratio),
+    'decimal_ratio': round(aspect_ratio, 3),
+
+    # Switch用ブール値（推奨）
+    'is_tall': bool(aspect_ratio < 0.67),
+    'is_wide': bool(aspect_ratio >= 1.2),
+    'is_square': bool(0.8 <= aspect_ratio < 1.2),
+
+    # 文字列分類
+    'classification': str(classification),
+
+    # デバッグ情報
+    'debug_info': {
+        'threshold_comparison': f"{aspect_ratio} < 0.67 = {aspect_ratio < 0.67}",
+        'switch_ready': True
+    }
+}
+```

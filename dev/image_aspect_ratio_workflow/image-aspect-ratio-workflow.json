@@ -1,0 +1,231 @@
+{
+  "name": "Image Aspect Ratio Detection Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "image-aspect-check",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 画像のアスペクト比を計算するコード\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  let imageData = null;\n  let aspectRatio = null;\n  let orientation = null;\n  \n  try {\n    // リクエストボディから幅と高さを取得（フォームデータまたはJSON）\n    let width = null;\n    let height = null;\n    \n    // バイナリデータがある場合の処理も含める\n    if (item.json.width && item.json.height) {\n      width = parseInt(item.json.width);\n      height = parseInt(item.json.height);\n    } else if (item.json.image_width && item.json.image_height) {\n      width = parseInt(item.json.image_width);\n      height = parseInt(item.json.image_height);\n    }\n    \n    if (width && height && width > 0 && height > 0) {\n      aspectRatio = width / height;\n      \n      // アスペクト比による分類\n      if (aspectRatio > 1.5) {\n        orientation = 'wide'; // 横長（16:9など）\n      } else if (aspectRatio < 0.75) {\n        orientation = 'tall'; // 縦長（9:16など）\n      } else {\n        orientation = 'square'; // 正方形に近い（4:3、1:1など）\n      }\n      \n      imageData = {\n        width: width,\n        height: height,\n        aspectRatio: aspectRatio,\n        orientation: orientation,\n        ratio_text: `${width}:${height}`,\n        decimal_ratio: Math.round(aspectRatio * 100) / 100\n      };\n    } else {\n      // 画像データが取得できない場合のフォールバック\n      imageData = {\n        width: null,\n        height: null,\n        aspectRatio: null,\n        orientation: 'unknown',\n        ratio_text: 'unknown',\n        decimal_ratio: null,\n        error: 'Could not determine image dimensions'\n      };\n    }\n    \n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: imageData\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: {\n          error: error.message,\n          orientation: 'error'\n        }\n      },\n      binary: item.binary\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "aspect-ratio-calculator",
+      "name": "Aspect Ratio Calculator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition1",
+                    "leftValue": "={{ $json.image_analysis.orientation }}",
+                    "rightValue": "wide",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "wide_images"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition2",
+                    "leftValue": "={{ $json.image_analysis.orientation }}",
+                    "rightValue": "tall",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "tall_images"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition3",
+                    "leftValue": "={{ $json.image_analysis.orientation }}",
+                    "rightValue": "square",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "square_images"
+            }
+          ]
+        },
+        "looseTypeValidation": false
+      },
+      "id": "aspect-ratio-switch",
+      "name": "Aspect Ratio Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 横長画像の処理\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'wide_image',\n        message: `横長画像を検出しました。アスペクト比: ${item.json.image_analysis.decimal_ratio}`,\n        recommended_action: 'バナー画像やヘッダー画像として使用することをお勧めします',\n        dimensions: `${item.json.image_analysis.width}x${item.json.image_analysis.height}`,\n        processed_at: new Date().toISOString()\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "wide-image-processor",
+      "name": "Wide Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 縦長画像の処理\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'tall_image',\n        message: `縦長画像を検出しました。アスペクト比: ${item.json.image_analysis.decimal_ratio}`,\n        recommended_action: 'ポートレート写真やモバイル向け画像として使用することをお勧めします',\n        dimensions: `${item.json.image_analysis.width}x${item.json.image_analysis.height}`,\n        processed_at: new Date().toISOString()\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "tall-image-processor",
+      "name": "Tall Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 正方形画像の処理\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'square_image',\n        message: `正方形に近い画像を検出しました。アスペクト比: ${item.json.image_analysis.decimal_ratio}`,\n        recommended_action: 'プロフィール画像やアイコンとして使用することをお勧めします',\n        dimensions: `${item.json.image_analysis.width}x${item.json.image_analysis.height}`,\n        processed_at: new Date().toISOString()\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "square-image-processor",
+      "name": "Square Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// エラーまたは不明な画像の処理\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'unknown_or_error',\n        message: '画像の分析中にエラーが発生したか、画像の種類を特定できませんでした',\n        recommended_action: '画像ファイルと寸法情報を確認してください',\n        error_details: item.json.image_analysis?.error || 'Unknown error',\n        processed_at: new Date().toISOString()\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio Calculator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio Calculator": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio Switch": {
+      "main": [
+        [
+          {
+            "node": "Wide Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tall Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Square Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "n8n-instance"
+  },
+  "id": "image-aspect-ratio-workflow",
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "image-processing",
+      "name": "image-processing"
+    }
+  ]
+}

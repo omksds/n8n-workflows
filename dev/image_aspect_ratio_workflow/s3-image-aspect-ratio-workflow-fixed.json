@@ -1,0 +1,396 @@
+{
+  "name": "S3 Image Aspect Ratio Detection Workflow (Fixed)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "s3-image-aspect-check",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bucket-name",
+              "name": "bucket_name",
+              "value": "={{ $json.bucket_name || 'your-default-bucket' }}",
+              "type": "string"
+            },
+            {
+              "id": "file-key",
+              "name": "file_key",
+              "value": "={{ $json.file_key || $json.image_key || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "request-timestamp",
+              "name": "request_timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-s3-params",
+      "name": "Prepare S3 Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validate-params",
+              "leftValue": "={{ $json.file_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate-params",
+      "name": "Validate Parameters",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "bucketName": "={{ $json.bucket_name }}",
+        "fileKey": "={{ $json.file_key }}",
+        "binaryPropertyName": "image_data"
+      },
+      "id": "s3-download",
+      "name": "S3 Download Image",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [900, 240],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// パラメータ不正の場合のエラーレスポンス\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  results.push({\n    json: {\n      ...item.json,\n      image_analysis: {\n        error: 'Missing required parameter: file_key',\n        orientation: 'error',\n        s3_source: {\n          bucket: item.json.bucket_name || 'unknown',\n          key: item.json.file_key || 'missing'\n        }\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "parameter-error-handler",
+      "name": "Parameter Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 360]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// S3から取得した画像のメタデータを解析してアスペクト比を計算（エラーハンドリング強化版）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  let imageData = null;\n  let aspectRatio = null;\n  let orientation = null;\n  \n  try {\n    // 入力データの安全な取得\n    const bucketName = item.json?.bucket_name || 'unknown';\n    const fileKey = item.json?.file_key || 'unknown';\n    \n    // バイナリデータから画像情報を取得\n    if (item.binary && item.binary.image_data) {\n      const binaryData = item.binary.image_data;\n      \n      let width = null;\n      let height = null;\n      \n      // 1. リクエストで寸法が指定されている場合\n      if (item.json?.width && item.json?.height) {\n        width = parseInt(item.json.width);\n        height = parseInt(item.json.height);\n      } else if (item.json?.image_width && item.json?.image_height) {\n        width = parseInt(item.json.image_width);\n        height = parseInt(item.json.image_height);\n      } else {\n        // 2. 画像ファイル名から推測する場合（例: image_1920x1080.jpg）\n        const fileName = fileKey || '';\n        if (fileName && typeof fileName === 'string' && fileName.length > 0) {\n          const dimensionMatch = fileName.match(/(\\d+)x(\\d+)/);\n          if (dimensionMatch) {\n            width = parseInt(dimensionMatch[1]);\n            height = parseInt(dimensionMatch[2]);\n          }\n          \n          // 3. 一般的な画像サイズの推測（ファイル名パターン）\n          if (!width || !height) {\n            const lowerFileName = fileName.toLowerCase();\n            if (lowerFileName.includes('banner') || lowerFileName.includes('header') || lowerFileName.includes('landscape')) {\n              width = 1920; height = 1080; // デフォルト横長\n            } else if (lowerFileName.includes('portrait') || lowerFileName.includes('mobile') || lowerFileName.includes('vertical')) {\n              width = 1080; height = 1920; // デフォルト縦長\n            } else if (lowerFileName.includes('square') || lowerFileName.includes('icon') || lowerFileName.includes('profile') || lowerFileName.includes('avatar')) {\n              width = 500; height = 500; // デフォルト正方形\n            }\n          }\n        }\n        \n        // 4. バイナリデータのサイズから推測（概算）\n        if (!width || !height) {\n          const fileSize = binaryData?.fileSize || binaryData?.data?.length || 0;\n          if (fileSize > 0) {\n            // 簡易的な推測ロジック（JPEGの場合）\n            if (fileSize > 2000000) { // 2MB以上\n              width = 1920; height = 1080;\n            } else if (fileSize > 500000) { // 500KB以上\n              width = 1024; height = 768;\n            } else {\n              width = 500; height = 500;\n            }\n          }\n        }\n      }\n      \n      if (width && height && width > 0 && height > 0) {\n        aspectRatio = width / height;\n        \n        // アスペクト比による分類\n        if (aspectRatio > 1.5) {\n          orientation = 'wide'; // 横長（16:9など）\n        } else if (aspectRatio < 0.75) {\n          orientation = 'tall'; // 縦長（9:16など）\n        } else {\n          orientation = 'square'; // 正方形に近い（4:3、1:1など）\n        }\n        \n        imageData = {\n          width: width,\n          height: height,\n          aspectRatio: aspectRatio,\n          orientation: orientation,\n          ratio_text: `${width}:${height}`,\n          decimal_ratio: Math.round(aspectRatio * 100) / 100,\n          file_size: binaryData?.fileSize || 0,\n          mime_type: binaryData?.mimeType || 'unknown',\n          s3_source: {\n            bucket: bucketName,\n            key: fileKey\n          }\n        };\n      } else {\n        // 画像データが取得できない場合\n        imageData = {\n          width: null,\n          height: null,\n          aspectRatio: null,\n          orientation: 'unknown',\n          ratio_text: 'unknown',\n          decimal_ratio: null,\n          error: 'Could not determine image dimensions from S3 file',\n          file_size: binaryData?.fileSize || 0,\n          mime_type: binaryData?.mimeType || 'unknown',\n          s3_source: {\n            bucket: bucketName,\n            key: fileKey\n          }\n        };\n      }\n    } else {\n      // S3からの取得に失敗した場合\n      imageData = {\n        error: 'Failed to download image from S3 or no binary data received',\n        orientation: 'error',\n        s3_source: {\n          bucket: bucketName,\n          key: fileKey\n        }\n      };\n    }\n    \n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: imageData\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    // キャッチしたエラーの詳細ログ\n    console.error('S3 Image Analysis Error:', error);\n    \n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: {\n          error: `S3 Image Analysis Error: ${error.message || 'Unknown error'}`,\n          error_stack: error.stack || 'No stack trace',\n          orientation: 'error',\n          s3_source: {\n            bucket: item.json?.bucket_name || 'unknown',\n            key: item.json?.file_key || 'unknown'\n          }\n        }\n      },\n      binary: item.binary\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "s3-image-analyzer",
+      "name": "S3 Image Analyzer (Fixed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition1",
+                    "leftValue": "={{ $json.image_analysis?.orientation }}",
+                    "rightValue": "wide",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "wide_images"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition2",
+                    "leftValue": "={{ $json.image_analysis?.orientation }}",
+                    "rightValue": "tall",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "tall_images"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "rightValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition3",
+                    "leftValue": "={{ $json.image_analysis?.orientation }}",
+                    "rightValue": "square",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "square_images"
+            }
+          ]
+        },
+        "looseTypeValidation": false
+      },
+      "id": "aspect-ratio-switch",
+      "name": "Aspect Ratio Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 横長画像の処理（安全なアクセス）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const analysis = item.json?.image_analysis || {};\n  \n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'wide_image',\n        message: `S3から横長画像を検出しました。アスペクト比: ${analysis.decimal_ratio || 'unknown'}`,\n        recommended_action: 'バナー画像やヘッダー画像として使用することをお勧めします',\n        dimensions: `${analysis.width || 'unknown'}x${analysis.height || 'unknown'}`,\n        file_info: {\n          size: analysis.file_size || 0,\n          mime_type: analysis.mime_type || 'unknown',\n          s3_location: analysis.s3_source ? `s3://${analysis.s3_source.bucket}/${analysis.s3_source.key}` : 'unknown'\n        },\n        processed_at: new Date().toISOString(),\n        processing_type: 's3_source'\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "wide-image-processor",
+      "name": "Wide Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 140]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 縦長画像の処理（安全なアクセス）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const analysis = item.json?.image_analysis || {};\n  \n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'tall_image',\n        message: `S3から縦長画像を検出しました。アスペクト比: ${analysis.decimal_ratio || 'unknown'}`,\n        recommended_action: 'ポートレート写真やモバイル向け画像として使用することをお勧めします',\n        dimensions: `${analysis.width || 'unknown'}x${analysis.height || 'unknown'}`,\n        file_info: {\n          size: analysis.file_size || 0,\n          mime_type: analysis.mime_type || 'unknown',\n          s3_location: analysis.s3_source ? `s3://${analysis.s3_source.bucket}/${analysis.s3_source.key}` : 'unknown'\n        },\n        processed_at: new Date().toISOString(),\n        processing_type: 's3_source'\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "tall-image-processor",
+      "name": "Tall Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 240]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 正方形画像の処理（安全なアクセス）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const analysis = item.json?.image_analysis || {};\n  \n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'square_image',\n        message: `S3から正方形に近い画像を検出しました。アスペクト比: ${analysis.decimal_ratio || 'unknown'}`,\n        recommended_action: 'プロフィール画像やアイコンとして使用することをお勧めします',\n        dimensions: `${analysis.width || 'unknown'}x${analysis.height || 'unknown'}`,\n        file_info: {\n          size: analysis.file_size || 0,\n          mime_type: analysis.mime_type || 'unknown',\n          s3_location: analysis.s3_source ? `s3://${analysis.s3_source.bucket}/${analysis.s3_source.key}` : 'unknown'\n        },\n        processed_at: new Date().toISOString(),\n        processing_type: 's3_source'\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "square-image-processor",
+      "name": "Square Image Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 340]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// S3エラーまたは不明な画像の処理（安全なアクセス）\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const analysis = item.json?.image_analysis || {};\n  \n  results.push({\n    json: {\n      ...item.json,\n      processing_result: {\n        category: 'unknown_or_error',\n        message: 'S3画像の分析中にエラーが発生したか、画像の種類を特定できませんでした',\n        recommended_action: 'S3のファイルパスと画像ファイルを確認してください',\n        error_details: analysis?.error || 'Unknown error',\n        error_stack: analysis?.error_stack || null,\n        file_info: analysis?.s3_source ? {\n          s3_location: `s3://${analysis.s3_source.bucket}/${analysis.s3_source.key}`,\n          size: analysis.file_size || 0,\n          mime_type: analysis.mime_type || 'unknown'\n        } : null,\n        processed_at: new Date().toISOString(),\n        processing_type: 's3_source'\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 440]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1340, 360]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare S3 Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare S3 Parameters": {
+      "main": [
+        [
+          {
+            "node": "Validate Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Parameters": {
+      "main": [
+        [
+          {
+            "node": "S3 Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parameter Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Download Image": {
+      "main": [
+        [
+          {
+            "node": "S3 Image Analyzer (Fixed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parameter Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "S3 Image Analyzer (Fixed)": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio Switch": {
+      "main": [
+        [
+          {
+            "node": "Wide Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tall Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Square Image Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "n8n-instance"
+  },
+  "id": "s3-image-aspect-ratio-workflow-fixed",
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "s3-image-processing-fixed",
+      "name": "s3-image-processing-fixed"
+    }
+  ]
+}

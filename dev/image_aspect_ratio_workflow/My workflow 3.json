@@ -1,0 +1,358 @@
+{
+  "name": "My workflow 3",
+  "nodes": [
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "bucket_name",
+              "stringValue": "tokushima-return"
+            },
+            {
+              "name": "file_key",
+              "stringValue": "r7/BroadCast/map.png"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6c0c59ee-bade-4880-b1e7-b5a4f81614db",
+      "name": "Prepare S3 Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        -624,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validate-params",
+              "leftValue": "={{ $json.file_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6064dab8-00ba-46ef-9d66-79cdd421dcca",
+      "name": "Validate Parameters",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "bucketName": "={{ $json.bucket_name }}",
+        "fileKey": "={{ $json.file_key }}",
+        "binaryPropertyName": "image_data"
+      },
+      "id": "d2b7cccc-8611-4b97-b8df-46958e9b611a",
+      "name": "S3 Download Image",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -80
+      ],
+      "credentials": {
+        "aws": {
+          "id": "KX5pZiVVuzNTekoJ",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// パラメータ不正の場合のエラーレスポンス\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  results.push({\n    json: {\n      ...item.json,\n      image_analysis: {\n        error: 'Missing required parameter: file_key',\n        orientation: 'error',\n        s3_source: {\n          bucket: item.json.bucket_name || 'unknown',\n          key: item.json.file_key || 'missing'\n        }\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "a90b4730-4f58-4858-8f2e-277ac068ecae",
+      "name": "Parameter Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        48
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -816,
+        -16
+      ],
+      "id": "1ee23977-72a2-482a-bb91-2c258717423c",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "python",
+        "pythonCode": "# S3から取得した画像のアスペクト比を計算（Python版 - Debug）\nimport json\nimport re\nimport math\nfrom datetime import datetime\n\ndef parse_file_size(size_str):\n    \"\"\"\n    ファイルサイズ文字列を数値（バイト）に変換\n    \"\"\"\n    if isinstance(size_str, (int, float)):\n        return int(size_str)\n    \n    if not isinstance(size_str, str):\n        return 0\n    \n    size_match = re.search(r'([\\d.]+)\\s*(MB|KB|B)', size_str, re.IGNORECASE)\n    if size_match:\n        size_value = float(size_match.group(1))\n        size_unit = size_match.group(2).upper()\n        if size_unit == 'MB':\n            return int(size_value * 1024 * 1024)\n        elif size_unit == 'KB':\n            return int(size_value * 1024)\n        else:  # B\n            return int(size_value)\n    \n    try:\n        return int(float(size_str))\n    except (ValueError, TypeError):\n        return 0\n\ndef analyze_image_aspect_ratio():\n    \"\"\"\n    画像のアスペクト比を分析（Debug版 - Switch整合性確保）\n    \"\"\"\n    try:\n        bucket_name = _json.get('bucket_name', 'unknown')\n        file_key = _json.get('file_key', 'unknown')\n        \n        print(f\"[DEBUG] Processing: bucket={bucket_name}, file_key={file_key}\")\n        print(f\"[DEBUG] Input JSON keys: {list(_json.keys())}\")\n        print(f\"[DEBUG] Binary available: {bool(_binary)}\")\n        \n        if _binary:\n            print(f\"[DEBUG] Binary keys: {list(_binary.keys())}\")\n        \n        # デフォルト値の設定（Switch整合性のため）\n        width = 1024  # デフォルト値\n        height = 768  # デフォルト値\n        detection_method = 'default'\n        \n        # バイナリデータの確認\n        if _binary and 'image_data' in _binary:\n            binary_data = _binary['image_data']\n            \n            print(f\"[DEBUG] Binary data available: {bool(binary_data)}\")\n            if hasattr(binary_data, 'get'):\n                raw_file_size = binary_data.get('fileSize', 'unknown')\n                raw_mime_type = binary_data.get('mimeType', 'unknown')\n                print(f\"[DEBUG] File size (raw): {raw_file_size}\")\n                print(f\"[DEBUG] MIME type: {raw_mime_type}\")\n            \n            # 1. 明示的な寸法指定を優先\n            if _json.get('width') and _json.get('height'):\n                width = int(_json['width'])\n                height = int(_json['height'])\n                detection_method = 'explicit'\n                print(f\"[DEBUG] Using explicit dimensions: {width}x{height}\")\n            elif _json.get('image_width') and _json.get('image_height'):\n                width = int(_json['image_width'])\n                height = int(_json['image_height'])\n                detection_method = 'explicit'\n                print(f\"[DEBUG] Using image_ prefixed dimensions: {width}x{height}\")\n            else:\n                # 2. ファイル名から寸法を推測\n                file_name = file_key or ''\n                \n                if file_name and isinstance(file_name, str) and len(file_name) > 0:\n                    print(f\"[DEBUG] Analyzing filename: {file_name}\")\n                    \n                    # パターン1: 1920x1080 形式\n                    dimension_match = re.search(r'(\\d+)x(\\d+)', file_name, re.IGNORECASE)\n                    if dimension_match:\n                        width = int(dimension_match.group(1))\n                        height = int(dimension_match.group(2))\n                        detection_method = 'filename_pattern'\n                        print(f\"[DEBUG] Found dimensions in filename: {width}x{height}\")\n                    else:\n                        # パターン2: キーワードベースの推測\n                        lower_filename = file_name.lower()\n                        print(f\"[DEBUG] Using keyword-based detection for: {lower_filename}\")\n                        \n                        if any(keyword in lower_filename for keyword in ['banner', 'header', 'landscape', 'wide']):\n                            width, height = 1920, 1080\n                            detection_method = 'keyword_wide'\n                            print(f\"[DEBUG] Detected wide image keyword: {width}x{height}\")\n                        elif any(keyword in lower_filename for keyword in ['portrait', 'mobile', 'vertical', 'tall']):\n                            width, height = 1080, 1920\n                            detection_method = 'keyword_tall'\n                            print(f\"[DEBUG] Detected tall image keyword: {width}x{height}\")\n                        elif any(keyword in lower_filename for keyword in ['square', 'icon', 'profile', 'avatar']):\n                            width, height = 500, 500\n                            detection_method = 'keyword_square'\n                            print(f\"[DEBUG] Detected square image keyword: {width}x{height}\")\n                        else:\n                            # パターン3: ファイルサイズからの推測\n                            file_size_bytes = 0\n                            if hasattr(binary_data, 'get'):\n                                raw_file_size = binary_data.get('fileSize', 0)\n                                file_size_bytes = parse_file_size(raw_file_size)\n                                print(f\"[DEBUG] Parsed file size: {file_size_bytes} bytes (from: {raw_file_size})\")\n                            elif hasattr(binary_data, '__len__'):\n                                file_size_bytes = len(binary_data)\n                                print(f\"[DEBUG] File size from length: {file_size_bytes} bytes\")\n                            \n                            if file_size_bytes > 2000000:\n                                width, height = 1920, 1080\n                                detection_method = 'filesize_large'\n                            elif file_size_bytes > 1000000:\n                                width, height = 1024, 768\n                                detection_method = 'filesize_medium'\n                            elif file_size_bytes > 500000:\n                                width, height = 800, 600\n                                detection_method = 'filesize_standard'\n                            else:\n                                width, height = 500, 500\n                                detection_method = 'filesize_small'\n                            \n                            print(f\"[DEBUG] File size based estimation: {width}x{height}\")\n        \n        # 必ず有効な寸法を保証（Switch整合性のため）\n        if not width or not height or width <= 0 or height <= 0:\n            width, height = 1024, 768  # フォールバック\n            detection_method = 'fallback'\n            print(f\"[DEBUG] Using fallback dimensions: {width}x{height}\")\n        \n        # アスペクト比計算（必ず数値を保証）\n        aspect_ratio = float(width / height)  # 明示的にfloatに変換\n        \n        # 2:3（0.67）を基準とした分類\n        threshold = 0.67\n        if aspect_ratio < threshold:\n            classification = 'tall'\n        else:\n            classification = 'not_tall'\n        \n        # ファイルサイズの取得\n        file_size_for_output = 0\n        mime_type = 'unknown'\n        raw_file_size_for_output = 'unknown'\n        \n        if _binary and 'image_data' in _binary and hasattr(_binary['image_data'], 'get'):\n            raw_file_size_for_output = _binary['image_data'].get('fileSize', 'unknown')\n            file_size_for_output = parse_file_size(raw_file_size_for_output)\n            mime_type = _binary['image_data'].get('mimeType', 'unknown')\n        \n        # デバッグ情報\n        print(f\"[DEBUG] Final results:\")\n        print(f\"[DEBUG] - Width: {width} (type: {type(width)})\")\n        print(f\"[DEBUG] - Height: {height} (type: {type(height)})\")\n        print(f\"[DEBUG] - Aspect Ratio: {aspect_ratio} (type: {type(aspect_ratio)})\")\n        print(f\"[DEBUG] - Classification: {classification}\")\n        print(f\"[DEBUG] - Detection Method: {detection_method}\")\n        print(f\"[DEBUG] - Threshold comparison: {aspect_ratio} < {threshold} = {aspect_ratio < threshold}\")\n        \n        # Switch ノード用に最適化された出力構造\n        image_data = {\n            'width': int(width),  # 明示的にintに変換\n            'height': int(height),  # 明示的にintに変換\n            'aspectRatio': float(aspect_ratio),  # 明示的にfloatに変換（Switch用）\n            'classification': str(classification),  # 明示的にstrに変換\n            'ratio_text': f\"{width}:{height}\",\n            'decimal_ratio': round(aspect_ratio, 3),  # 3桁精度で丸め\n            'is_tall': bool(aspect_ratio < threshold),  # 明示的にboolに変換\n            'ratio_2_3_comparison': {\n                'threshold': float(threshold),\n                'is_taller_than_2_3': bool(aspect_ratio < threshold),\n                'difference_from_2_3': round(aspect_ratio - threshold, 3)\n            },\n            'detection_method': str(detection_method),\n            'file_size': int(file_size_for_output),\n            'file_size_raw': str(raw_file_size_for_output),\n            'mime_type': str(mime_type),\n            's3_source': {\n                'bucket': str(bucket_name),\n                'key': str(file_key)\n            },\n            'debug_info': {\n                'aspect_ratio_type': str(type(aspect_ratio)),\n                'width_type': str(type(width)),\n                'height_type': str(type(height)),\n                'threshold_comparison': f\"{aspect_ratio} < {threshold} = {aspect_ratio < threshold}\",\n                'switch_ready': True\n            }\n        }\n        \n        print(f\"[DEBUG] Image analysis object created successfully\")\n        print(f\"[DEBUG] aspectRatio for Switch: {image_data['aspectRatio']} (type: {type(image_data['aspectRatio'])})\")\n        \n    except Exception as error:\n        print(f\"[DEBUG] Analysis Error: {str(error)}\")\n        import traceback\n        traceback.print_exc()\n        \n        # エラー時でもSwitch整合性を保つ\n        image_data = {\n            'width': 800,\n            'height': 600,\n            'aspectRatio': 1.33,  # エラー時のデフォルト値\n            'classification': 'error',\n            'error': f'Analysis Error: {str(error)}',\n            'error_type': type(error).__name__,\n            'debug_info': {\n                'error_occurred': True,\n                'switch_ready': True  # エラー時でもSwitch通過可能\n            },\n            's3_source': {\n                'bucket': _json.get('bucket_name', 'unknown'),\n                'key': _json.get('file_key', 'unknown')\n            }\n        }\n    \n    # 元の入力データを保持して返す\n    result = {\n        'json': {\n            **_json,\n            'image_analysis': image_data\n        },\n        'binary': _binary\n    }\n    \n    print(f\"[DEBUG] Returning result with image_analysis.aspectRatio = {result['json']['image_analysis']['aspectRatio']}\")\n    return result\n\n# メイン実行\nresult = analyze_image_aspect_ratio()\nreturn result"
+      },
+      "id": "2d4e31d4-dd49-4d39-bb68-a13659dbcd1a",
+      "name": "S3 Image Analyzer (Python Debug)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3b879f00-a426-4641-a25c-8c743534fc3f",
+                    "leftValue": "={{ $json.image_analysis.is_tall }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4aa7205e-bbca-4a31-aa77-5c521278518c",
+                    "leftValue": "={{ $json.image_analysis.is_tall }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "885ab1fc-8d11-4b37-a0d1-d70de677ff3f",
+      "name": "Aspect Ratio 2:3 Switch (Debug)",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        512,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "python",
+        "pythonCode": "# 縦長でない画像の処理（Debug版）\nfrom datetime import datetime\n\nanalysis = _json.get('image_analysis', {})\n\nprint(f\"[NOT_TALL DEBUG] Received analysis: {analysis.get('debug_info', {})}\")\nprint(f\"[NOT_TALL DEBUG] AspectRatio: {analysis.get('aspectRatio')} (type: {type(analysis.get('aspectRatio'))})\")\nprint(f\"[NOT_TALL DEBUG] Classification: {analysis.get('classification')}\")\n\n# アスペクト比による詳細分類\nratio = analysis.get('decimal_ratio', 0)\nif 0.67 <= ratio < 0.8:\n    detail_classification = '2:3から3:4の範囲'\n    specific_recommendation = 'ポートレート写真や縦型コンテンツに適用'\nelif 0.8 <= ratio < 1.2:\n    detail_classification = '正方形に近い'\n    specific_recommendation = 'プロフィール画像、アイコン、正方形コンテンツに適用'\nelif ratio >= 1.2:\n    detail_classification = '横長'\n    specific_recommendation = 'バナー画像、ヘッダー画像、横型コンテンツに適用'\nelse:\n    detail_classification = '2:3比率'\n    specific_recommendation = '標準的な縦型コンテンツに適用'\n\nresult = {\n    'json': {\n        **_json,\n        'processing_result': {\n            'category': 'not_tall_image',\n            'message': f\"✅ 縦長でない画像を検出しました（2:3以上）。アスペクト比: {analysis.get('decimal_ratio', 'unknown')}\",\n            'recommended_action': specific_recommendation,\n            'dimensions': f\"{analysis.get('width', 'unknown')}x{analysis.get('height', 'unknown')}\",\n            'aspect_ratio_info': {\n                'value': analysis.get('decimal_ratio'),\n                'raw_value': analysis.get('aspectRatio'),\n                'threshold': '0.67 (2:3)',\n                'comparison': '以上',\n                'difference': analysis.get('ratio_2_3_comparison', {}).get('difference_from_2_3', 'unknown'),\n                'detail_classification': detail_classification,\n                'detection_method': analysis.get('detection_method', 'unknown')\n            },\n            'file_info': {\n                'size_bytes': analysis.get('file_size', 0),\n                'size_raw': analysis.get('file_size_raw', 'unknown'),\n                'mime_type': analysis.get('mime_type', 'unknown'),\n                's3_location': f\"s3://{analysis.get('s3_source', {}).get('bucket', 'unknown')}/{analysis.get('s3_source', {}).get('key', 'unknown')}\" if analysis.get('s3_source') else 'unknown'\n            },\n            'debug_info': analysis.get('debug_info', {}),\n            'processed_at': datetime.now().isoformat(),\n            'processing_type': 's3_2_3_classification_python_debug',\n            'switch_path': 'not_tall_images'\n        }\n    },\n    'binary': _binary\n}\n\nprint(f\"[NOT_TALL DEBUG] Processing completed successfully\")\nreturn result"
+      },
+      "id": "47a2f830-5812-40db-b3ec-91d243a82bb5",
+      "name": "Not Tall Image Processor (Debug)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "python",
+        "pythonCode": "# 縦長画像の処理（Debug版）\nfrom datetime import datetime\n\nanalysis = _json.get('image_analysis', {})\n\nprint(f\"[TALL DEBUG] Received analysis: {analysis.get('debug_info', {})}\")\nprint(f\"[TALL DEBUG] AspectRatio: {analysis.get('aspectRatio')} (type: {type(analysis.get('aspectRatio'))})\")\nprint(f\"[TALL DEBUG] Classification: {analysis.get('classification')}\")\n\nresult = {\n    'json': {\n        **_json,\n        'processing_result': {\n            'category': 'tall_image',\n            'message': f\"✅ 縦長画像を検出しました（2:3より縦長）。アスペクト比: {analysis.get('decimal_ratio', 'unknown')}\",\n            'recommended_action': 'ポートレート写真、モバイル向け画像、縦型バナーとして使用',\n            'dimensions': f\"{analysis.get('width', 'unknown')}x{analysis.get('height', 'unknown')}\",\n            'aspect_ratio_info': {\n                'value': analysis.get('decimal_ratio'),\n                'raw_value': analysis.get('aspectRatio'),\n                'threshold': '0.67 (2:3)',\n                'comparison': 'より縦長',\n                'difference': analysis.get('ratio_2_3_comparison', {}).get('difference_from_2_3', 'unknown'),\n                'detection_method': analysis.get('detection_method', 'unknown')\n            },\n            'file_info': {\n                'size_bytes': analysis.get('file_size', 0),\n                'size_raw': analysis.get('file_size_raw', 'unknown'),\n                'mime_type': analysis.get('mime_type', 'unknown'),\n                's3_location': f\"s3://{analysis.get('s3_source', {}).get('bucket', 'unknown')}/{analysis.get('s3_source', {}).get('key', 'unknown')}\" if analysis.get('s3_source') else 'unknown'\n            },\n            'debug_info': analysis.get('debug_info', {}),\n            'processed_at': datetime.now().isoformat(),\n            'processing_type': 's3_2_3_classification_python_debug',\n            'switch_path': 'tall_images'\n        }\n    },\n    'binary': _binary\n}\n\nprint(f\"[TALL DEBUG] Processing completed successfully\")\nreturn result"
+      },
+      "id": "d1477c2d-d0d9-46f2-b7fc-43f4d2abaad2",
+      "name": "Tall Image Processor (Debug)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -320
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Prepare S3 Parameters": {
+      "main": [
+        [
+          {
+            "node": "Validate Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Parameters": {
+      "main": [
+        [
+          {
+            "node": "S3 Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parameter Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Download Image": {
+      "main": [
+        [
+          {
+            "node": "S3 Image Analyzer (Python Debug)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parameter Error Handler": {
+      "main": [
+        []
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Prepare S3 Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Image Analyzer (Python Debug)": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio 2:3 Switch (Debug)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio 2:3 Switch (Debug)": {
+      "main": [
+        [
+          {
+            "node": "Tall Image Processor (Debug)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not Tall Image Processor (Debug)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9b5e856f-0e03-4da7-b32c-df9eb062a8e2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "311ace5c97116198cb1915b838232a28c835386515a59c6c2e0d74060ab88ab4"
+  },
+  "id": "Dus3vh9pFanT4thQ",
+  "tags": [
+    {
+      "createdAt": "2025-08-04T14:29:58.329Z",
+      "updatedAt": "2025-08-04T14:29:58.329Z",
+      "id": "9IFjZpmIzmrYEJx2",
+      "name": "s3-image-processing"
+    },
+    {
+      "createdAt": "2025-08-04T14:25:53.610Z",
+      "updatedAt": "2025-08-04T14:25:53.610Z",
+      "id": "qvoVZZW1yPNgWFEp",
+      "name": "image-processing"
+    },
+    {
+      "name": "s3-2-3-aspect",
+      "id": "0iY6MZrat87Q5Fzh",
+      "createdAt": "2025-08-04T14:55:32.542Z",
+      "updatedAt": "2025-08-04T14:55:32.542Z"
+    },
+    {
+      "name": "s3-2-3-aspect-enhanced",
+      "id": "LMTGWLUJ8rkXl10B",
+      "createdAt": "2025-08-04T15:06:49.701Z",
+      "updatedAt": "2025-08-04T15:06:49.701Z"
+    },
+    {
+      "name": "s3-2-3-aspect-fixed",
+      "id": "bvUZla3V8LdYzmZm",
+      "createdAt": "2025-08-04T15:10:23.024Z",
+      "updatedAt": "2025-08-04T15:10:23.024Z"
+    },
+    {
+      "name": "s3-2-3-aspect-corrected",
+      "id": "7rScmUlg1OqxDitk",
+      "createdAt": "2025-08-04T15:14:17.582Z",
+      "updatedAt": "2025-08-04T15:14:17.582Z"
+    },
+    {
+      "name": "s3-2-3-aspect-python",
+      "id": "SzuMaUY9Eqy9heVm",
+      "createdAt": "2025-08-04T15:19:49.839Z",
+      "updatedAt": "2025-08-04T15:19:49.839Z"
+    }
+  ]
+}

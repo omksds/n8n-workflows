@@ -1,0 +1,185 @@
+{
+  "description": "アスペクト比2:3（0.67）を境にした条件分岐のテストケース",
+  "threshold": {
+    "value": 0.67,
+    "ratio": "2:3",
+    "description": "この値未満が縦長、以上が縦長でない"
+  },
+  "test_cases": [
+    {
+      "category": "縦長画像（< 0.67）",
+      "cases": [
+        {
+          "name": "超縦長画像（1:2）",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/ultra-tall.jpg",
+            "width": 1080,
+            "height": 2160
+          },
+          "expected": {
+            "aspectRatio": 0.5,
+            "classification": "tall",
+            "output_branch": "tall_images",
+            "message": "縦長画像を検出しました（2:3より縦長）"
+          }
+        },
+        {
+          "name": "縦長画像（3:5）",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/portrait-3-5.jpg",
+            "width": 900,
+            "height": 1500
+          },
+          "expected": {
+            "aspectRatio": 0.6,
+            "classification": "tall",
+            "output_branch": "tall_images"
+          }
+        },
+        {
+          "name": "2:3より少し縦長",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/slightly-taller.jpg",
+            "width": 800,
+            "height": 1220
+          },
+          "expected": {
+            "aspectRatio": 0.66,
+            "classification": "tall",
+            "output_branch": "tall_images"
+          }
+        }
+      ]
+    },
+    {
+      "category": "縦長でない画像（>= 0.67）",
+      "cases": [
+        {
+          "name": "2:3（境界値）",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/exact-2-3.jpg",
+            "width": 800,
+            "height": 1200
+          },
+          "expected": {
+            "aspectRatio": 0.67,
+            "classification": "not_tall",
+            "output_branch": "not_tall_images",
+            "detail_classification": "2:3比率"
+          }
+        },
+        {
+          "name": "3:4画像",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/standard-3-4.jpg",
+            "width": 600,
+            "height": 800
+          },
+          "expected": {
+            "aspectRatio": 0.75,
+            "classification": "not_tall",
+            "output_branch": "not_tall_images",
+            "detail_classification": "2:3から3:4の範囲"
+          }
+        },
+        {
+          "name": "正方形画像（1:1）",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/square.jpg",
+            "width": 500,
+            "height": 500
+          },
+          "expected": {
+            "aspectRatio": 1.0,
+            "classification": "not_tall",
+            "output_branch": "not_tall_images",
+            "detail_classification": "正方形に近い"
+          }
+        },
+        {
+          "name": "4:3画像",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/standard-4-3.jpg",
+            "width": 800,
+            "height": 600
+          },
+          "expected": {
+            "aspectRatio": 1.33,
+            "classification": "not_tall",
+            "output_branch": "not_tall_images",
+            "detail_classification": "横長"
+          }
+        },
+        {
+          "name": "16:9画像",
+          "request": {
+            "bucket_name": "test-bucket",
+            "file_key": "images/widescreen.jpg",
+            "width": 1920,
+            "height": 1080
+          },
+          "expected": {
+            "aspectRatio": 1.78,
+            "classification": "not_tall",
+            "output_branch": "not_tall_images",
+            "detail_classification": "横長"
+          }
+        }
+      ]
+    }
+  ],
+  "curl_examples": [
+    {
+      "name": "縦長画像テスト（1:2 - 0.5）",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-2-3-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/ultra-tall.jpg\", \"width\": 1080, \"height\": 2160}'"
+    },
+    {
+      "name": "境界値テスト（2:3 - 0.67）",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-2-3-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/exact-2-3.jpg\", \"width\": 800, \"height\": 1200}'"
+    },
+    {
+      "name": "正方形画像テスト（1:1 - 1.0）",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-2-3-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/square.jpg\", \"width\": 500, \"height\": 500}'"
+    },
+    {
+      "name": "横長画像テスト（16:9 - 1.78）",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-2-3-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/widescreen.jpg\", \"width\": 1920, \"height\": 1080}'"
+    }
+  ],
+  "expected_outputs": {
+    "tall_images": {
+      "processing_result": {
+        "category": "tall_image",
+        "message": "縦長画像を検出しました（2:3より縦長）。アスペクト比: 0.5",
+        "recommended_action": "ポートレート写真、モバイル向け画像、縦型バナーとして使用することをお勧めします",
+        "aspect_ratio_info": {
+          "value": 0.5,
+          "threshold": "0.67 (2:3)",
+          "comparison": "より縦長",
+          "difference": -0.17
+        }
+      }
+    },
+    "not_tall_images": {
+      "processing_result": {
+        "category": "not_tall_image",
+        "message": "縦長でない画像を検出しました（2:3以上）。アスペクト比: 1.33",
+        "recommended_action": "バナー画像、ヘッダー画像、横型コンテンツに適しています",
+        "aspect_ratio_info": {
+          "value": 1.33,
+          "threshold": "0.67 (2:3)",
+          "comparison": "以上",
+          "difference": 0.66,
+          "detail_classification": "横長"
+        }
+      }
+    }
+  }
+}

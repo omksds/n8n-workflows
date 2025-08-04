@@ -1,0 +1,187 @@
+{
+  "name": "Aspect Ratio 2:3 Switch Node",
+  "description": "アスペクト比2:3（0.67）を境に縦長とそうでない時で分岐する条件分岐ノード",
+  "node": {
+    "parameters": {
+      "mode": "rules",
+      "rules": {
+        "values": [
+          {
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "rightValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "conditions": [
+                {
+                  "id": "tall-condition",
+                  "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+                  "rightValue": 0.67,
+                  "operator": {
+                    "type": "number",
+                    "operation": "smaller"
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "renameOutput": true,
+            "outputKey": "tall_images"
+          },
+          {
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "rightValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "conditions": [
+                {
+                  "id": "not-tall-condition",
+                  "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+                  "rightValue": 0.67,
+                  "operator": {
+                    "type": "number",
+                    "operation": "largerEqual"
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "renameOutput": true,
+            "outputKey": "not_tall_images"
+          }
+        ]
+      },
+      "looseTypeValidation": false
+    },
+    "id": "aspect-ratio-2-3-switch",
+    "name": "Aspect Ratio 2:3 Switch",
+    "type": "n8n-nodes-base.switch",
+    "typeVersion": 3.2,
+    "position": [1340, 300]
+  },
+  "usage_examples": {
+    "tall_images": {
+      "description": "縦長画像（アスペクト比 < 0.67）",
+      "examples": [
+        {
+          "aspect_ratio": 0.5,
+          "dimensions": "1080x2160",
+          "classification": "縦長（2:4）"
+        },
+        {
+          "aspect_ratio": 0.6,
+          "dimensions": "900x1500",
+          "classification": "縦長（3:5）"
+        },
+        {
+          "aspect_ratio": 0.66,
+          "dimensions": "800x1200",
+          "classification": "縦長（2:3に近い）"
+        }
+      ]
+    },
+    "not_tall_images": {
+      "description": "縦長でない画像（アスペクト比 >= 0.67）",
+      "examples": [
+        {
+          "aspect_ratio": 0.67,
+          "dimensions": "800x1200",
+          "classification": "2:3（境界値）"
+        },
+        {
+          "aspect_ratio": 0.75,
+          "dimensions": "600x800",
+          "classification": "3:4"
+        },
+        {
+          "aspect_ratio": 1.0,
+          "dimensions": "500x500",
+          "classification": "正方形（1:1）"
+        },
+        {
+          "aspect_ratio": 1.33,
+          "dimensions": "800x600",
+          "classification": "横長（4:3）"
+        },
+        {
+          "aspect_ratio": 1.78,
+          "dimensions": "1920x1080",
+          "classification": "横長（16:9）"
+        }
+      ]
+    }
+  },
+  "test_cases": [
+    {
+      "input": {
+        "image_analysis": {
+          "aspectRatio": 0.5,
+          "width": 1080,
+          "height": 2160
+        }
+      },
+      "expected_output": "tall_images",
+      "description": "縦長画像（1:2）"
+    },
+    {
+      "input": {
+        "image_analysis": {
+          "aspectRatio": 0.66,
+          "width": 800,
+          "height": 1212
+        }
+      },
+      "expected_output": "tall_images",
+      "description": "縦長画像（2:3より少し縦長）"
+    },
+    {
+      "input": {
+        "image_analysis": {
+          "aspectRatio": 0.67,
+          "width": 800,
+          "height": 1194
+        }
+      },
+      "expected_output": "not_tall_images",
+      "description": "境界値（2:3）"
+    },
+    {
+      "input": {
+        "image_analysis": {
+          "aspectRatio": 0.75,
+          "width": 600,
+          "height": 800
+        }
+      },
+      "expected_output": "not_tall_images",
+      "description": "3:4画像"
+    },
+    {
+      "input": {
+        "image_analysis": {
+          "aspectRatio": 1.0,
+          "width": 500,
+          "height": 500
+        }
+      },
+      "expected_output": "not_tall_images",
+      "description": "正方形画像"
+    },
+    {
+      "input": {
+        "image_analysis": {
+          "aspectRatio": 1.78,
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "expected_output": "not_tall_images",
+      "description": "横長画像（16:9）"
+    }
+  ]
+}

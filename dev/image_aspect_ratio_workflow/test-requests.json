@@ -1,0 +1,105 @@
+{
+  "test_cases": [
+    {
+      "name": "横長画像テスト（16:9）",
+      "description": "1920x1080の横長画像をテスト",
+      "request": {
+        "width": 1920,
+        "height": 1080,
+        "filename": "banner-image.jpg",
+        "description": "ウェブサイトのバナー画像"
+      },
+      "expected_result": {
+        "orientation": "wide",
+        "aspect_ratio": 1.78,
+        "category": "wide_image"
+      }
+    },
+    {
+      "name": "縦長画像テスト（9:16）",
+      "description": "1080x1920の縦長画像をテスト",
+      "request": {
+        "width": 1080,
+        "height": 1920,
+        "filename": "mobile-portrait.jpg",
+        "description": "モバイル向けポートレート画像"
+      },
+      "expected_result": {
+        "orientation": "tall",
+        "aspect_ratio": 0.56,
+        "category": "tall_image"
+      }
+    },
+    {
+      "name": "正方形画像テスト（1:1）",
+      "description": "500x500の正方形画像をテスト",
+      "request": {
+        "width": 500,
+        "height": 500,
+        "filename": "profile-icon.jpg",
+        "description": "プロフィール用アイコン画像"
+      },
+      "expected_result": {
+        "orientation": "square",
+        "aspect_ratio": 1.0,
+        "category": "square_image"
+      }
+    },
+    {
+      "name": "4:3画像テスト",
+      "description": "1024x768の4:3画像をテスト",
+      "request": {
+        "width": 1024,
+        "height": 768,
+        "filename": "standard-photo.jpg",
+        "description": "標準的な写真"
+      },
+      "expected_result": {
+        "orientation": "square",
+        "aspect_ratio": 1.33,
+        "category": "square_image"
+      }
+    },
+    {
+      "name": "エラーケーステスト",
+      "description": "寸法情報が不足している場合のテスト",
+      "request": {
+        "filename": "unknown-image.jpg",
+        "description": "寸法不明の画像"
+      },
+      "expected_result": {
+        "orientation": "unknown",
+        "category": "unknown_or_error"
+      }
+    },
+    {
+      "name": "代替フィールドテスト",
+      "description": "image_width, image_heightフィールドを使用したテスト",
+      "request": {
+        "image_width": 800,
+        "image_height": 600,
+        "filename": "alt-field-image.jpg",
+        "description": "代替フィールド名を使用した画像"
+      },
+      "expected_result": {
+        "orientation": "square",
+        "aspect_ratio": 1.33,
+        "category": "square_image"
+      }
+    }
+  ],
+  "curl_examples": [
+    {
+      "name": "横長画像のテスト",
+      "command": "curl -X POST http://your-n8n-instance/webhook/image-aspect-check -H \"Content-Type: application/json\" -d '{\"width\": 1920, \"height\": 1080, \"filename\": \"banner-image.jpg\"}'"
+    },
+    {
+      "name": "縦長画像のテスト",
+      "command": "curl -X POST http://your-n8n-instance/webhook/image-aspect-check -H \"Content-Type: application/json\" -d '{\"width\": 1080, \"height\": 1920, \"filename\": \"mobile-portrait.jpg\"}'"
+    },
+    {
+      "name": "正方形画像のテスト",
+      "command": "curl -X POST http://your-n8n-instance/webhook/image-aspect-check -H \"Content-Type: application/json\" -d '{\"width\": 500, \"height\": 500, \"filename\": \"profile-icon.jpg\"}'"
+    }
+  ]
+}

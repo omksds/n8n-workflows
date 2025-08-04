@@ -1,0 +1,275 @@
+---
+globs: *.json
+description: n8n Switch ノードの設定とトラブルシューティング
+---
+
+# n8n Switch ノード ベストプラクティス
+
+## 🎯 重要な教訓: ブール値比較を使用する
+
+### ❌ 問題のあったパターン（数値比較）
+
+```json
+{
+  "conditions": [
+    {
+      "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+      "rightValue": 0.67,
+      "operator": {
+        "type": "number",
+        "operation": "smaller"
+      }
+    }
+  ]
+}
+```
+
+**問題**: Python の `float` と n8n の数値型で型エラーが発生
+
+### ✅ 正解パターン（ブール値比較）
+
+```json
+{
+  "conditions": [
+    {
+      "leftValue": "={{ $json.image_analysis.is_tall }}",
+      "rightValue": "",
+      "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+      }
+    }
+  ]
+}
+```
+
+**利点**: 型の問題を完全に回避、より安定した動作
+
+## 🔧 Switch ノード必須設定
+
+### 基本設定
+
+```json
+{
+  "parameters": {
+    "rules": {
+      "values": [
+        {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose", // 重要: "strict" ではなく "loose"
+              "version": 2
+            }
+          }
+        }
+      ]
+    },
+    "looseTypeValidation": true, // 重要: 型変換を許可
+    "options": {}
+  }
+}
+```
+
+### ブール値比較の設定
+
+```json
+{
+  "operator": {
+    "type": "boolean",
+    "operation": "true", // または "false"
+    "singleValue": true // 重要: ブール値比較時は必須
+  }
+}
+```
+
+## 📋 条件分岐パターン
+
+### 二分岐（縦長 vs 縦長でない）
+
+```json
+{
+  "rules": {
+    "values": [
+      {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.image_analysis.is_tall }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "renameOutput": true,
+        "outputKey": "not_tall_images"
+      },
+      {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.image_analysis.is_tall }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "renameOutput": true,
+        "outputKey": "tall_images"
+      }
+    ]
+  }
+}
+```
+
+### 多分岐（縦長・正方形・横長）
+
+```json
+{
+  "rules": {
+    "values": [
+      {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.image_analysis.is_tall }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "outputKey": "tall_images"
+      },
+      {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.image_analysis.is_square }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "outputKey": "square_images"
+      },
+      {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.image_analysis.is_wide }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "outputKey": "wide_images"
+      }
+    ]
+  }
+}
+```
+
+## 🐍 Code ノードでの事前準備
+
+### Switch ノード用ブール値の準備
+
+```python
+# アスペクト比から各種ブール値を計算
+aspect_ratio = width / height
+
+image_data = {
+    # 元の数値データ
+    'aspectRatio': float(aspect_ratio),
+    'decimal_ratio': round(aspect_ratio, 3),
+
+    # Switch ノード用ブール値（推奨）
+    'is_tall': bool(aspect_ratio < 0.67),      # 2:3より縦長
+    'is_square': bool(0.8 <= aspect_ratio < 1.2),  # 正方形に近い
+    'is_wide': bool(aspect_ratio >= 1.2),          # 横長
+
+    # 複合条件も可能
+    'is_portrait': bool(aspect_ratio < 0.8),       # ポートレート
+    'is_landscape': bool(aspect_ratio > 1.25),     # ランドスケープ
+
+    # 文字列分類（参考用）
+    'classification': 'tall' if aspect_ratio < 0.67 else 'not_tall'
+}
+```
+
+## 🚨 よくある問題と解決策
+
+### 1. 型エラー問題
+
+**問題**: `TypeError: Cannot read properties of undefined (reading 'singleValue')`
+**解決**: `"singleValue": true` を追加
+
+### 2. 数値比較の型不整合
+
+**問題**: Python の `float` が Switch で認識されない
+**解決**: ブール値比較に変更
+
+### 3. 厳密な型チェック
+
+**問題**: `"typeValidation": "strict"` でエラー
+**解決**: `"typeValidation": "loose"` に変更
+
+### 4. 型変換エラー
+
+**問題**: `looseTypeValidation: false` で型変換失敗
+**解決**: `looseTypeValidation: true` に設定
+
+## 🔍 デバッグとテスト
+
+### Switch ノードのテスト方法
+
+```python
+# Code ノードでのデバッグログ
+print(f"[SWITCH_DEBUG] is_tall: {is_tall} (type: {type(is_tall)})")
+print(f"[SWITCH_DEBUG] is_square: {is_square} (type: {type(is_square)})")
+print(f"[SWITCH_DEBUG] is_wide: {is_wide} (type: {type(is_wide)})")
+
+# Switch 後のノードでの確認
+print(f"[SWITCH_RESULT] Received via: {_json.get('switch_path', 'unknown')}")
+```
+
+### 期待される動作確認
+
+1. **入力データ**: `aspectRatio: 1.333`
+2. **ブール値計算**: `is_tall: false`, `is_wide: true`
+3. **Switch 分岐**: `wide_images` 出力経路
+4. **後続ノード**: 適切なデータを受信
+
+## 📊 設定比較表
+
+| 設定項目              | 推奨値    | 非推奨値     | 理由               |
+| --------------------- | --------- | ------------ | ------------------ |
+| `typeValidation`      | `"loose"` | `"strict"`   | 型チェックを緩和   |
+| `looseTypeValidation` | `true`    | `false`      | 型変換を許可       |
+| `singleValue`         | `true`    | `false`      | ブール値比較時必須 |
+| 比較方法              | ブール値  | 数値直接比較 | 型安全性           |
+
+## 🎯 まとめ
+
+1. **ブール値比較を使用** - 数値比較は避ける
+2. **事前にブール値を計算** - Code ノードで準備
+3. **適切な設定** - `looseTypeValidation: true`, `typeValidation: "loose"`
+4. **デバッグログ** - 各段階での値と型を確認

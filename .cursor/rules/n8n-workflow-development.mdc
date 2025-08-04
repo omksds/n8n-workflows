@@ -1,0 +1,150 @@
+---
+globs: *.json
+description: n8n ワークフロー開発のベストプラクティス
+---
+
+# n8n ワークフロー開発ルール
+
+## 🚨 重要: Switch ノードでの条件分岐
+
+### ❌ 避けるべきパターン
+
+```json
+// 数値の直接比較は型エラーの原因
+{
+  "leftValue": "={{ $json.image_analysis.aspectRatio }}",
+  "rightValue": 0.67,
+  "operator": {
+    "type": "number",
+    "operation": "smaller"
+  }
+}
+```
+
+### ✅ 推奨パターン
+
+```json
+// ブール値での比較を使用
+{
+  "leftValue": "={{ $json.image_analysis.is_tall }}",
+  "rightValue": "",
+  "operator": {
+    "type": "boolean",
+    "operation": "true",
+    "singleValue": true
+  }
+}
+```
+
+## 📋 Switch ノード設定のベストプラクティス
+
+### 必須設定
+
+- `"typeValidation": "loose"` - 厳密な型チェックを緩和
+- `"looseTypeValidation": true` - 型変換を許可
+- `"singleValue": true` - ブール値比較時は必須
+
+### Code ノードでの事前処理
+
+```python
+# Switch ノード用にブール値を事前計算
+image_data = {
+    'aspectRatio': float(aspect_ratio),
+    'is_tall': bool(aspect_ratio < 0.67),  # Switch用ブール値
+    'classification': 'tall' if aspect_ratio < 0.67 else 'not_tall'
+}
+```
+
+## 🔧 Python Code ノードでの型安全性
+
+### 必須の型変換
+
+```python
+# 明示的な型変換で n8n との整合性を保証
+image_data = {
+    'width': int(width),
+    'height': int(height),
+    'aspectRatio': float(aspect_ratio),
+    'is_tall': bool(aspect_ratio < threshold),
+    'classification': str(classification)
+}
+```
+
+### ファイルサイズ処理
+
+```python
+def parse_file_size(size_str):
+    """n8n の S3 ノードから返される '1.06 MB' 形式を数値に変換"""
+    if isinstance(size_str, (int, float)):
+        return int(size_str)
+
+    if not isinstance(size_str, str):
+        return 0
+
+    size_match = re.search(r'([\d.]+)\s*(MB|KB|B)', size_str, re.IGNORECASE)
+    if size_match:
+        size_value = float(size_match.group(1))
+        size_unit = size_match.group(2).upper()
+        if size_unit == 'MB':
+            return int(size_value * 1024 * 1024)
+        elif size_unit == 'KB':
+            return int(size_value * 1024)
+        else:
+            return int(size_value)
+
+    try:
+        return int(float(size_str))
+    except (ValueError, TypeError):
+        return 0
+```
+
+## 🛡️ エラーハンドリング
+
+### デフォルト値の保証
+
+```python
+# エラー時でも Switch ノードが処理できる形式を維持
+if error_occurred:
+    image_data = {
+        'aspectRatio': 1.33,  # デフォルト値
+        'is_tall': False,     # デフォルトブール値
+        'classification': 'error'
+    }
+```
+
+### バイナリデータアクセス
+
+```python
+# n8n の Code ノード（runOnceForEachItem モード）でのバイナリアクセス
+if _binary and 'image_data' in _binary:
+    binary_data = _binary['image_data']  # 正しいアクセス方法
+    file_size = parse_file_size(binary_data.get('fileSize', 0))
+```
+
+## 📊 デバッグとログ
+
+### 詳細なデバッグログ
+
+```python
+print(f"[DEBUG] - AspectRatio: {aspect_ratio} (type: {type(aspect_ratio)})")
+print(f"[DEBUG] - is_tall: {is_tall} (type: {type(is_tall)})")
+print(f"[DEBUG] - Threshold comparison: {aspect_ratio} < {threshold} = {aspect_ratio < threshold}")
+```
+
+## 🔄 ワークフロー構造
+
+### 推奨ノード順序
+
+1. **Webhook/Manual Trigger** - 入力受付
+2. **Set ノード** - パラメータ準備・検証
+3. **If ノード** - パラメータ検証
+4. **S3 ノード** - バイナリデータ取得
+5. **Code ノード (Python)** - 分析・計算（ブール値出力）
+6. **Switch ノード** - ブール値での条件分岐
+7. **Code ノード (Python)** - 最終処理
+
+### 重要な接続パターン
+
+- **S3 → Code**: `binaryPropertyName: "image_data"`
+- **Code → Switch**: `is_tall` ブール値を使用
+- **Switch → 後続**: 適切な出力キーで分岐

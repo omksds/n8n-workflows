@@ -1,0 +1,286 @@
+{
+  "name": "workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "trigger": ["app_mention"],
+        "channelId": {
+          "__rl": true,
+          "value": "C0790JJ923E",
+          "mode": "list",
+          "cachedResultName": "回帰pj_program"
+        },
+        "options": {}
+      },
+      "id": "3f267228-b53c-4bc2-a66b-044ece600ffc",
+      "name": "Slack Trigger",
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [-160, 144],
+      "webhookId": "5492a9e7-f030-4643-a350-aef581d0b343",
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{ $json.files && $json.files.length > 0 ? $json.files[0].mimetype : '' }}",
+              "rightValue": "image/",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "227b865f-1da5-4f25-b385-8d675640ff02",
+      "name": "Check if Image",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [64, 144]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.files[0].url_private }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "options": {}
+      },
+      "id": "2ac51c67-7746-4e2e-9313-6ce76fdf43dd",
+      "name": "Download Image from Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [288, 144],
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "tokushima-return",
+        "fileName": "={{ $json.filename || 'r7/BroadCast/' + $binary.data.fileName }}",
+        "additionalFields": {
+          "serverSideEncryption": "AES256"
+        }
+      },
+      "id": "98904c0e-3057-43a0-bb0c-0866053ddf7d",
+      "name": "Upload to S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [512, 144],
+      "credentials": {
+        "aws": {
+          "id": "KX5pZiVVuzNTekoJ",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0790JJ923E",
+          "mode": "id"
+        },
+        "text": "={{ '✅ 画像 ' + $json.files[0].name + ' をS3に正常にアップロードしました！\\n📁 保存先: `r7/BroadCast/' + $json.files[0].name + '`\\n📊 ファイルサイズ: ' + $json.files[0].size + ' bytes' }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [960, 144],
+      "id": "17bc68d2-9d44-4a7d-86c4-d9f5c6a2f469",
+      "name": "Send Success Message",
+      "webhookId": "b1d6899f-b5c3-41fc-9068-464ef7aaacae",
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0790JJ923E",
+          "mode": "list",
+          "cachedResultName": "回帰pj_program"
+        },
+        "text": "={{ '❌ 画像ファイルが見つかりません\\n\\n**デバッグ情報:**\\n• ファイル数: ' + ($json.files ? $json.files.length : '0') + '\\n• ファイル情報: ' + ($json.files && $json.files.length > 0 ? '✅ あり' : '❌ なし') + '\\n' + ($json.files && $json.files.length > 0 ? '• ファイル名: ' + $json.files[0].name + '\\n• MIME Type: ' + $json.files[0].mimetype + '\\n• ファイルサイズ: ' + $json.files[0].size + ' bytes\\n• 判定条件: mimetype が \\'image/\\' で始まるか\\n• 判定結果: ' + ($json.files[0].mimetype.indexOf('image/') === 0 ? '✅ 条件合致（なぜか失敗）' : '❌ 条件不合致: ' + $json.files[0].mimetype) : '') + '\\n\\n**イベント情報:**\\n• イベントタイプ: ' + $json.type + '\\n• メッセージ: ' + $json.text }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [288, 336],
+      "id": "d0db5997-6d3b-402d-ba47-8ae1285240f9",
+      "name": "Send Debug Message",
+      "webhookId": "ed1fbb97-7476-480a-83c1-5997e050c302",
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{ $json.error ? 'error' : 'success' }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-s3-result-001",
+      "name": "Check S3 Upload Result",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [736, 144]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0790JJ923E",
+          "mode": "list",
+          "cachedResultName": "回帰pj_program"
+        },
+        "text": "={{ '🚨 S3アップロードエラー\\n\\n**エラー詳細:**\\n• ファイル名: ' + $('Download Image from Slack').item.json.files[0].name + '\\n• エラー: ' + $json.error.message + '\\n\\n**デバッグ用:**\\n```\\n' + JSON.stringify($json.error, null, 2) + '\\n```' }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [960, 336],
+      "id": "bfd2cac1-6d0c-4bed-b089-e60c74ec209c",
+      "name": "Send S3 Error Message",
+      "webhookId": "f95805d0-234e-4a4f-bdd1-61826328d777",
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Slack Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check if Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Image": {
+      "main": [
+        [
+          {
+            "node": "Download Image from Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Debug Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image from Slack": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to S3": {
+      "main": [
+        [
+          {
+            "node": "Check S3 Upload Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check S3 Upload Result": {
+      "main": [
+        [
+          {
+            "node": "Send Success Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send S3 Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "63bdfeaf-817c-4e1a-b7ba-07a091c233cb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "311ace5c97116198cb1915b838232a28c835386515a59c6c2e0d74060ab88ab4"
+  },
+  "id": "9cTYs4f9KyHIIqcL",
+  "tags": []
+}

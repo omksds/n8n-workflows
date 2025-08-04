@@ -1,0 +1,197 @@
+{
+  "test_cases": [
+    {
+      "name": "S3横長画像テスト（ファイル名パターン）",
+      "description": "ファイル名から寸法を推測する横長画像のテスト",
+      "request": {
+        "bucket_name": "test-image-bucket",
+        "file_key": "images/banner_1920x1080.jpg"
+      },
+      "expected_result": {
+        "orientation": "wide",
+        "aspect_ratio": 1.78,
+        "category": "wide_image",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3縦長画像テスト（明示的寸法）",
+      "description": "明示的に寸法を指定した縦長画像のテスト",
+      "request": {
+        "bucket_name": "test-image-bucket",
+        "file_key": "images/portrait.jpg",
+        "width": 1080,
+        "height": 1920
+      },
+      "expected_result": {
+        "orientation": "tall",
+        "aspect_ratio": 0.56,
+        "category": "tall_image",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3正方形画像テスト（キーワード推測）",
+      "description": "ファイル名のキーワードから正方形と推測するテスト",
+      "request": {
+        "bucket_name": "test-image-bucket",
+        "file_key": "images/profile-square.jpg"
+      },
+      "expected_result": {
+        "orientation": "square",
+        "aspect_ratio": 1.0,
+        "category": "square_image",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3バナー画像テスト（キーワード推測）",
+      "description": "bannerキーワードから横長と推測するテスト",
+      "request": {
+        "bucket_name": "marketing-assets",
+        "file_key": "banners/header-banner.jpg"
+      },
+      "expected_result": {
+        "orientation": "wide",
+        "aspect_ratio": 1.78,
+        "category": "wide_image",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3モバイル画像テスト（キーワード推測）",
+      "description": "mobileキーワードから縦長と推測するテスト",
+      "request": {
+        "bucket_name": "mobile-assets",
+        "file_key": "mobile/mobile-screenshot.png"
+      },
+      "expected_result": {
+        "orientation": "tall",
+        "aspect_ratio": 0.56,
+        "category": "tall_image",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3エラーケーステスト（存在しないファイル）",
+      "description": "存在しないS3ファイルのエラーハンドリングテスト",
+      "request": {
+        "bucket_name": "test-image-bucket",
+        "file_key": "images/non-existent.jpg"
+      },
+      "expected_result": {
+        "orientation": "error",
+        "category": "unknown_or_error",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3代替フィールドテスト",
+      "description": "image_keyフィールドを使用したテスト",
+      "request": {
+        "bucket_name": "test-image-bucket",
+        "image_key": "images/alternative-field.jpg",
+        "image_width": 800,
+        "image_height": 600
+      },
+      "expected_result": {
+        "orientation": "square",
+        "aspect_ratio": 1.33,
+        "category": "square_image",
+        "processing_type": "s3_source"
+      }
+    },
+    {
+      "name": "S3デフォルトバケットテスト",
+      "description": "バケット名を省略した場合のデフォルト動作テスト",
+      "request": {
+        "file_key": "images/default-bucket-test.jpg",
+        "width": 1024,
+        "height": 768
+      },
+      "expected_result": {
+        "orientation": "square",
+        "aspect_ratio": 1.33,
+        "category": "square_image",
+        "processing_type": "s3_source"
+      }
+    }
+  ],
+  "curl_examples": [
+    {
+      "name": "S3横長画像のテスト",
+      "description": "ファイル名パターンから寸法を推測",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-image-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/banner_1920x1080.jpg\"}'"
+    },
+    {
+      "name": "S3縦長画像のテスト",
+      "description": "明示的な寸法指定",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-image-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/portrait.jpg\", \"width\": 1080, \"height\": 1920}'"
+    },
+    {
+      "name": "S3正方形画像のテスト",
+      "description": "キーワードから推測",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-image-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/profile-square.jpg\"}'"
+    },
+    {
+      "name": "S3バナー画像のテスト",
+      "description": "bannerキーワードから横長推測",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-image-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"marketing-assets\", \"file_key\": \"banners/header-banner.jpg\"}'"
+    },
+    {
+      "name": "S3エラーケースのテスト",
+      "description": "存在しないファイルのテスト",
+      "command": "curl -X POST http://your-n8n-instance/webhook/s3-image-aspect-check -H \"Content-Type: application/json\" -d '{\"bucket_name\": \"test-bucket\", \"file_key\": \"images/non-existent.jpg\"}'"
+    }
+  ],
+  "aws_setup": {
+    "required_permissions": ["s3:GetObject", "s3:GetObjectMetadata"],
+    "iam_policy_example": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": ["s3:GetObject", "s3:GetObjectMetadata"],
+          "Resource": "arn:aws:s3:::your-bucket-name/*"
+        }
+      ]
+    },
+    "credential_setup": {
+      "access_key_id": "YOUR_ACCESS_KEY_ID",
+      "secret_access_key": "YOUR_SECRET_ACCESS_KEY",
+      "region": "ap-northeast-1"
+    }
+  },
+  "common_file_patterns": {
+    "dimension_patterns": [
+      "image_1920x1080.jpg",
+      "photo_800x600.png",
+      "banner_1200x400.webp"
+    ],
+    "keyword_patterns": {
+      "wide": ["banner", "header", "landscape", "wide"],
+      "tall": ["portrait", "mobile", "vertical", "tall"],
+      "square": ["square", "icon", "profile", "avatar"]
+    }
+  },
+  "troubleshooting": {
+    "common_errors": [
+      {
+        "error": "Access Denied",
+        "solution": "AWS認証情報とS3バケット権限を確認してください"
+      },
+      {
+        "error": "NoSuchKey",
+        "solution": "ファイルキーが正しいか、ファイルが存在するかを確認してください"
+      },
+      {
+        "error": "InvalidBucketName",
+        "solution": "バケット名の形式が正しいかを確認してください"
+      },
+      {
+        "error": "Could not determine image dimensions",
+        "solution": "リクエストに明示的にwidthとheightを含めるか、ファイル名に寸法情報を含めてください"
+      }
+    ]
+  }
+}

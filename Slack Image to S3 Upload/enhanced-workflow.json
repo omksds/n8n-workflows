@@ -1,0 +1,392 @@
+{
+  "name": "Enhanced Slack Image to S3 Upload Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "trigger": ["app_mention"],
+        "channelId": {
+          "__rl": true,
+          "value": "C0790JJ923E",
+          "mode": "list",
+          "cachedResultName": "回帰pj_program"
+        },
+        "options": {}
+      },
+      "id": "slack-trigger-001",
+      "name": "Slack Trigger",
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [40, 100],
+      "webhookId": "enhanced-slack-webhook",
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "image-check",
+              "leftValue": "={{ $json.files && $json.files.length > 0 ? $json.files[0].mimetype : '' }}",
+              "rightValue": "image/",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-image-001",
+      "name": "Check if Image",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [280, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.files[0].url_private }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "options": {}
+      },
+      "id": "download-image-001",
+      "name": "Download Image from Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [520, 100],
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// アスペクト比分析用Pythonコード\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    // バイナリデータの存在確認\n    if (!item.binary || !item.binary.data) {\n      results.push({\n        json: {\n          ...item.json,\n          image_analysis: {\n            error: 'No binary data found',\n            aspectRatio: 0,\n            is_tall: false,\n            classification: 'error'\n          }\n        },\n        binary: item.binary\n      });\n      continue;\n    }\n    \n    // 画像サイズの取得\n    const imageData = item.binary.data;\n    const width = imageData.width || 0;\n    const height = imageData.height || 0;\n    \n    if (width === 0 || height === 0) {\n      results.push({\n        json: {\n          ...item.json,\n          image_analysis: {\n            error: 'Invalid image dimensions',\n            aspectRatio: 0,\n            is_tall: false,\n            classification: 'error'\n          }\n        },\n        binary: item.binary\n      });\n      continue;\n    }\n    \n    // アスペクト比の計算\n    const aspectRatio = width / height;\n    const isTall = aspectRatio < 0.67; // 2:3の閾値\n    \n    // 分類の決定\n    let classification = 'wide';\n    if (isTall) {\n      classification = 'tall';\n    }\n    \n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: {\n          width: width,\n          height: height,\n          aspectRatio: aspectRatio,\n          is_tall: isTall,\n          classification: classification,\n          error: null\n        }\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    results.push({\n      json: {\n        ...item.json,\n        image_analysis: {\n          error: error.message,\n          aspectRatio: 0,\n          is_tall: false,\n          classification: 'error'\n        }\n      },\n      binary: item.binary\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "aspect-ratio-analysis-001",
+      "name": "Aspect Ratio Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "looseTypeValidation": true
+          },
+          "conditions": [
+            {
+              "id": "tall-check",
+              "leftValue": "={{ $json.image_analysis.is_tall }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aspect-ratio-check-001",
+      "name": "Aspect Ratio Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 100]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "tokushima-return",
+        "fileName": "={{ 'r7/BroadCast/' + $json.files[0].name || 'slack_image_' + Date.now() + '.jpg' }}",
+        "additionalFields": {
+          "serverSideEncryption": "AES256"
+        }
+      },
+      "id": "upload-s3-tall-001",
+      "name": "Upload to S3 (縦長)",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [1240, 60],
+      "credentials": {
+        "aws": {
+          "id": "KX5pZiVVuzNTekoJ",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "tokushima-return",
+        "fileName": "={{ 'r7/BroadCast/original_' + $json.files[0].name || 'original_slack_image_' + Date.now() + '.jpg' }}",
+        "additionalFields": {
+          "serverSideEncryption": "AES256"
+        }
+      },
+      "id": "upload-s3-original-001",
+      "name": "Upload Original to S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [1240, 180],
+      "credentials": {
+        "aws": {
+          "id": "KX5pZiVVuzNTekoJ",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "invoke",
+        "function": "TokushimaReturn_edit_img",
+        "qualifier": "$LATEST",
+        "invocationType": "RequestResponse",
+        "payload": "={{ JSON.stringify({\n  file_key: 'r7/BroadCast/original_' + ($json.files[0].name || 'slack_image_' + Date.now() + '.jpg'),\n  bucket_name: 'tokushima-return'\n}) }}"
+      },
+      "id": "lambda-invoke-001",
+      "name": "Lambda Invoke",
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [1480, 180],
+      "credentials": {
+        "aws": {
+          "id": "KX5pZiVVuzNTekoJ",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": "C0790JJ923E",
+        "text": "✅ **縦長画像をS3に保存しました**\n\n**ファイル情報:**\n• ファイル名: {{ $json.files[0].name }}\n• アスペクト比: {{ $json.image_analysis.aspectRatio.toFixed(3) }}\n• サイズ: {{ $json.image_analysis.width }}x{{ $json.image_analysis.height }}\n• S3パス: {{ $json.fileName }}\n\n**処理結果:** 縦長画像のため、そのままS3に保存しました。",
+        "otherOptions": {
+          "threadTs": "={{ $json.thread_ts || $json.ts }}"
+        }
+      },
+      "id": "success-message-tall-001",
+      "name": "Send Success Message (縦長)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1480, 60],
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": "C0790JJ923E",
+        "text": "✅ **横長画像を処理してS3に保存しました**\n\n**ファイル情報:**\n• 元ファイル名: {{ $json.files[0].name }}\n• アスペクト比: {{ $json.image_analysis.aspectRatio.toFixed(3) }}\n• サイズ: {{ $json.image_analysis.width }}x{{ $json.image_analysis.height }}\n\n**保存されたファイル:**\n• 元画像: {{ $json.fileName }}\n• 処理済み画像: Lambda関数内でS3に保存済み\n\n**処理結果:** 横長画像のため、元画像保存後にLambda関数で処理を実行しました。",
+        "otherOptions": {
+          "threadTs": "={{ $json.thread_ts || $json.ts }}"
+        }
+      },
+      "id": "success-message-wide-001",
+      "name": "Send Success Message (横長)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1720, 180],
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": "C0790JJ923E",
+        "text": "🚨 **画像処理中にエラーが発生しました**\n\n**エラー詳細:**\n{{ $json.image_analysis.error }}\n\n**ファイル情報:**\n• ファイル名: {{ $json.files[0].name }}\n• アスペクト比: {{ $json.image_analysis.aspectRatio }}\n\n**対応:** システム管理者に連絡してください。",
+        "otherOptions": {
+          "threadTs": "={{ $json.thread_ts || $json.ts }}"
+        }
+      },
+      "id": "error-message-001",
+      "name": "Send Error Message",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1240, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": "C0790JJ923E",
+        "text": "❌ **画像ファイルが見つかりませんでした**\n\n**メッセージ内容:**\n{{ $json.text }}\n\n**対応:** 画像ファイルを添付してメンションしてください。",
+        "otherOptions": {
+          "threadTs": "={{ $json.thread_ts || $json.ts }}"
+        }
+      },
+      "id": "debug-message-001",
+      "name": "Send Debug Message",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [520, 220],
+      "credentials": {
+        "slackApi": {
+          "id": "rtOAhzxGADr1mh6l",
+          "name": "enterral"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Slack Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check if Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Image": {
+      "main": [
+        [
+          {
+            "node": "Download Image from Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Debug Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image from Slack": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio Analysis": {
+      "main": [
+        [
+          {
+            "node": "Aspect Ratio Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aspect Ratio Check": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3 (縦長)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload Original to S3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to S3 (縦長)": {
+      "main": [
+        [
+          {
+            "node": "Send Success Message (縦長)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Original to S3": {
+      "main": [
+        [
+          {
+            "node": "Lambda Invoke",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lambda Invoke": {
+      "main": [
+        [
+          {
+            "node": "Send Success Message (横長)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-01-15T10:00:00.000Z",
+      "updatedAt": "2025-01-15T10:00:00.000Z",
+      "id": "enhanced-slack-workflow",
+      "name": "Enhanced Slack Workflow"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-15T10:00:00.000Z",
+  "versionId": "1"
+} 

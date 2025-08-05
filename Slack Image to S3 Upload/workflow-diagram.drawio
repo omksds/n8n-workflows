@@ -1,0 +1,79 @@
+<mxfile host="65bd71144e">
+    <diagram name="Slack Image to S3 Upload Workflow" id="workflow-diagram">
+        <mxGraphModel dx="114" dy="151" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="slack-trigger" value="&lt;b&gt;Slack Trigger&lt;/b&gt;&lt;br&gt;app_mention&lt;br&gt;Channel: C0790JJ923E&lt;br&gt;回帰pj_program" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="200" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="check-image" value="&lt;b&gt;Check if Image&lt;/b&gt;&lt;br&gt;MIME Type: image/&lt;br&gt;条件判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="200" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="download-image" value="&lt;b&gt;Download Image&lt;/b&gt;&lt;br&gt;from Slack&lt;br&gt;HTTP Request&lt;br&gt;url_private" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="200" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="upload-s3" value="&lt;b&gt;Upload to S3&lt;/b&gt;&lt;br&gt;Bucket: tokushima-return&lt;br&gt;Path: r7/BroadCast/&lt;br&gt;Encryption: AES256" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="200" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="check-s3-result" value="&lt;b&gt;Check S3&lt;/b&gt;&lt;br&gt;Upload Result&lt;br&gt;Success/Failure&lt;br&gt;判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1000" y="200" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="success-message" value="&lt;b&gt;Send Success&lt;/b&gt;&lt;br&gt;Message&lt;br&gt;✅ 成功通知&lt;br&gt;ファイル情報" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="120" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="s3-error-message" value="&lt;b&gt;Send S3 Error&lt;/b&gt;&lt;br&gt;Message&lt;br&gt;🚨 エラー通知&lt;br&gt;エラー詳細" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="280" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="debug-message" value="&lt;b&gt;Send Debug&lt;/b&gt;&lt;br&gt;Message&lt;br&gt;❌ 画像なし&lt;br&gt;デバッグ情報" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="400" width="160" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="conn1" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;" parent="1" source="slack-trigger" target="check-image" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="200" y="240" as="sourcePoint"/>
+                        <mxPoint x="280" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn2" value="画像の場合" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;labelBorderColor=#000000;" parent="1" source="check-image" target="download-image" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="440" y="240" as="sourcePoint"/>
+                        <mxPoint x="520" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn3" value="画像でない場合" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;labelBorderColor=#000000;" parent="1" source="check-image" target="debug-message" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="360" y="280" as="sourcePoint"/>
+                        <mxPoint x="520" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn4" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;" parent="1" source="download-image" target="upload-s3" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="680" y="240" as="sourcePoint"/>
+                        <mxPoint x="760" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn5" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;" parent="1" source="upload-s3" target="check-s3-result" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="920" y="240" as="sourcePoint"/>
+                        <mxPoint x="1000" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn6" value="成功" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;labelBorderColor=#000000;" parent="1" source="check-s3-result" target="success-message" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="1160" y="200" as="sourcePoint"/>
+                        <mxPoint x="1240" y="160" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn7" value="失敗" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;labelBorderColor=#000000;" parent="1" source="check-s3-result" target="s3-error-message" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="1160" y="280" as="sourcePoint"/>
+                        <mxPoint x="1240" y="320" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="title" value="Slack Image to S3 Upload Workflow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="40" width="400" height="40" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
